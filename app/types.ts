@@ -24,6 +24,7 @@ export interface Part {
   inlineData?: {
     mimeType: string;
     data: string; // base64 string
+    fileName?: string;
   };
 }
 

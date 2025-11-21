@@ -167,7 +167,20 @@ const MessageBubble: React.FC<{
                 <div className="flex flex-col gap-2">
                 {message.parts.map((part, index) => {
                     if (part.inlineData) {
-                        return <img key={index} src={`data:${part.inlineData.mimeType};base64,${part.inlineData.data}`} alt="content" className="rounded-lg max-w-full h-auto" />
+                        const dataUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                        if (part.inlineData.mimeType.startsWith('image/')) {
+                            return <img key={index} src={dataUrl} alt={part.inlineData.fileName ?? 'attachment'} className="rounded-lg max-w-full h-auto" />
+                        }
+                        return (
+                            <a
+                              key={index}
+                              href={dataUrl}
+                              download={part.inlineData.fileName ?? 'attachment'}
+                              className="flex items-center gap-2 text-xs text-indigo-300 underline"
+                            >
+                              Baixar {part.inlineData.fileName ?? part.inlineData.mimeType}
+                            </a>
+                        );
                     }
                     if(part.text) {
                         if (!isUser) {
@@ -379,6 +392,8 @@ export const ChatNode: React.FC<ChatNodeProps> = ({ node, onSendMessage, onBranc
   const [editingMessage, setEditingMessage] = useState<{index: number; parts: Part[]} | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [nameDraft, setNameDraft] = useState(getDefaultNodeTitle(node));
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setNameDraft(getDefaultNodeTitle(node));
@@ -392,12 +407,52 @@ export const ChatNode: React.FC<ChatNodeProps> = ({ node, onSendMessage, onBranc
     scrollToBottom();
   }, [node.messages, node.isLoading]);
 
+  const handleAttachmentSelect = (file?: File | null) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base64 = result.split(',')[1];
+      setAttachments(prev => [...prev, {
+        id: `att-${Date.now()}`,
+        name: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        data: base64,
+      }]);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAttachmentChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    handleAttachmentSelect(file);
+    event.target.value = '';
+  };
+
+  const handleRemoveAttachment = (attachmentId: string) => {
+    setAttachments(prev => prev.filter(att => att.id !== attachmentId));
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (input.trim() && !node.isLoading) {
+    if ((input.trim() || attachments.length > 0) && !node.isLoading) {
       const history = node.messages;
-      onSendMessage([{ text: input }], history);
+      const parts: Part[] = [];
+      attachments.forEach(att => {
+        parts.push({
+          inlineData: {
+            mimeType: att.mimeType,
+            data: att.data,
+            fileName: att.name,
+          }
+        });
+      });
+      if (input.trim()) {
+        parts.push({ text: input.trim() });
+      }
+      onSendMessage(parts, history);
       setInput('');
+      setAttachments([]);
     }
   };
   
@@ -513,24 +568,44 @@ export const ChatNode: React.FC<ChatNodeProps> = ({ node, onSendMessage, onBranc
                 )}
                 <div ref={messagesEndRef} />
                 </div>
-                <div className="p-3 border-t border-gray-700/50">
+                <div className="p-3 border-t border-gray-700/50 space-y-2">
                     <form onSubmit={handleSubmit} className="flex items-center gap-2">
-                    <input
-                        type="text"
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        placeholder="Digite sua mensagem..."
-                        className="flex-1 bg-gray-700 text-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
-                        disabled={node.isLoading || !!editingMessage}
-                    />
-                    <button
-                        type="submit"
-                        disabled={node.isLoading || !input.trim() || !!editingMessage}
-                        className="p-2 bg-indigo-600 rounded-lg text-white disabled:bg-gray-600 disabled:cursor-not-allowed hover:bg-indigo-500 transition-colors"
-                    >
-                    <SendIcon/>
-                    </button>
+                        <input ref={fileInputRef} type="file" className="hidden" onChange={handleAttachmentChange} />
+                        <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="p-2 bg-gray-700 rounded-lg text-gray-200 hover:bg-gray-600 transition-colors"
+                            title="Adicionar arquivo"
+                            disabled={node.isLoading}
+                        >
+                            <PlusIcon className="w-4 h-4" />
+                        </button>
+                        <input
+                            type="text"
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            placeholder="Digite sua mensagem..."
+                            className="flex-1 bg-gray-700 text-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
+                            disabled={node.isLoading || !!editingMessage}
+                        />
+                        <button
+                            type="submit"
+                            disabled={node.isLoading || (!input.trim() && attachments.length === 0) || !!editingMessage}
+                            className="p-2 bg-indigo-600 rounded-lg text-white disabled:bg-gray-600 disabled:cursor-not-allowed hover:bg-indigo-500 transition-colors"
+                        >
+                            <SendIcon className="w-4 h-4" />
+                        </button>
                     </form>
+                    {attachments.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                            {attachments.map(att => (
+                                <div key={att.id} className="flex items-center gap-2 px-2 py-1 bg-gray-700 text-xs text-gray-200 rounded-lg">
+                                    <span>{att.name}</span>
+                                    <button type="button" onClick={() => handleRemoveAttachment(att.id)} className="text-red-300 hover:text-red-200">×</button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </>
         )}
