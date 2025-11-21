@@ -8,6 +8,15 @@ export enum NodeType {
     IMAGE = 'image',
     AGENT = 'agent',
     GROUP = 'group',
+    FILE = 'file',
+    WEB = 'web',
+}
+
+export interface FileData {
+    name: string;
+    mimeType: string;
+    size: number;
+    data: string; // base64
 }
 
 export interface Part {
@@ -29,6 +38,7 @@ export interface Node {
     type: NodeType;
     position: { x: number; y: number };
     size?: { width: number; height: number };
+    title?: string;
     messages?: Message[];
     parentId: string | null;
     parentMessageIndex?: number;
@@ -39,6 +49,10 @@ export interface Node {
         agentName: string;
         dataSource: string;
         tools: string[];
+    };
+    file?: FileData;
+    web?: {
+        url: string;
     };
 }
 

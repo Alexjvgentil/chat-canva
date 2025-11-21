@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { type Node, type Message, Role, NodeType, type Part } from '../types';
 import { SparklesIcon, ImageIcon, SendIcon, PlayIcon, MoveIcon, EditIcon, SyncIcon, BotIcon, TrashIcon, PlusIcon } from './Icons';
 
@@ -15,7 +15,106 @@ interface ChatNodeProps {
   onStartEdgeCreation: (e: React.MouseEvent, nodeId: string, handle: string) => void;
   onCompleteEdgeCreation: (nodeId: string, handle: string) => void;
   onResizeStart: (e: React.MouseEvent, nodeId: string) => void;
+  onRename: (nodeId: string, title: string) => void;
 }
+
+const escapeHtml = (text: string) =>
+    text.replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+const formatInlineMarkdown = (value: string) => {
+    let text = escapeHtml(value);
+    text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    text = text.replace(/__(.+?)__/g, '<strong>$1</strong>');
+    text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    text = text.replace(/_(.+?)_/g, '<em>$1</em>');
+    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+    return text;
+};
+
+const markdownToHtml = (raw: string) => {
+    const lines = raw.split(/\r?\n/);
+    let html = '';
+    let inList = false;
+    let inCode = false;
+    const codeBuffer: string[] = [];
+
+    const flushList = () => {
+        if (inList) {
+            html += '</ul>';
+            inList = false;
+        }
+    };
+
+    const flushCode = () => {
+        if (inCode) {
+            html += `<pre class="bg-gray-800/80 text-gray-100 rounded-lg p-3 text-xs overflow-auto"><code>${escapeHtml(codeBuffer.join('\n'))}</code></pre>`;
+            codeBuffer.length = 0;
+            inCode = false;
+        }
+    };
+
+    lines.forEach((line) => {
+        const trimmed = line.trim();
+
+        if (trimmed.startsWith('```')) {
+            if (inCode) {
+                flushCode();
+            } else {
+                flushList();
+                inCode = true;
+            }
+            return;
+        }
+
+        if (inCode) {
+            codeBuffer.push(line);
+            return;
+        }
+
+        if (/^[-*]\s+/.test(trimmed)) {
+            if (!inList) {
+                flushCode();
+                html += '<ul class="list-disc pl-5 space-y-1">';
+                inList = true;
+            }
+            const content = trimmed.replace(/^[-*]\s+/, '');
+            html += `<li>${formatInlineMarkdown(content)}</li>`;
+            return;
+        }
+
+        flushList();
+
+        if (/^#{1,6}\s/.test(trimmed)) {
+            const level = trimmed.match(/^#+/)[0].length;
+            const content = trimmed.replace(/^#{1,6}\s*/, '');
+            html += `<h${level} class="text-gray-100 font-semibold mt-2">${formatInlineMarkdown(content)}</h${level}>`;
+            return;
+        }
+
+        if (trimmed === '') {
+            html += '<p class="h-2"></p>';
+            return;
+        }
+
+        html += `<p>${formatInlineMarkdown(trimmed)}</p>`;
+    });
+
+    flushList();
+    flushCode();
+    return html;
+};
+
+const MarkdownContent: React.FC<{ text: string }> = ({ text }) => {
+    const html = useMemo(() => markdownToHtml(text), [text]);
+    return (
+        <div
+            className="markdown-content prose prose-invert max-w-none text-sm text-gray-50 leading-relaxed"
+            dangerouslySetInnerHTML={{ __html: html }}
+        />
+    );
+};
 
 const MessageBubble: React.FC<{ 
     message: Message, 
@@ -35,6 +134,9 @@ const MessageBubble: React.FC<{
                         return <img key={index} src={`data:${part.inlineData.mimeType};base64,${part.inlineData.data}`} alt="content" className="rounded-lg max-w-full h-auto" />
                     }
                     if(part.text) {
+                        if (!isUser) {
+                            return <MarkdownContent key={index} text={part.text} />
+                        }
                         return <p key={index} className="text-sm text-gray-50 whitespace-pre-wrap">{part.text}</p>
                     }
                     return null;
@@ -69,7 +171,7 @@ const NodeHeader: React.FC<{ onDragStart: (e: React.MouseEvent) => void; node: N
         [NodeType.IMAGE]: <ImageIcon className="w-4 h-4 text-gray-500"/>,
         [NodeType.AGENT]: <BotIcon className="w-4 h-4 text-gray-500"/>,
         [NodeType.GROUP]: <div/>,
-    }
+    };
 
     const TITLES: Record<NodeType, string> = {
         [NodeType.CHAT]: "Novo Chat",
@@ -111,6 +213,25 @@ const NodeHeader: React.FC<{ onDragStart: (e: React.MouseEvent) => void; node: N
             </div>
         </div>
     )
+};
+
+const getDefaultNodeTitle = (node: Node) => {
+    if (node.title?.trim()) return node.title.trim();
+    if (node.type === NodeType.AGENT && node.agentConfig?.agentName) {
+        return node.agentConfig.agentName;
+    }
+    switch (node.type) {
+        case NodeType.CHAT:
+            return 'Chat Node';
+        case NodeType.IMAGE:
+            return 'Image Node';
+        case NodeType.AGENT:
+            return 'Agent Node';
+        case NodeType.GROUP:
+            return 'Group';
+        default:
+            return 'Node';
+    }
 };
 
 const UnexecutedNode: React.FC<{ node: Node, onRun: (parts: Part[]) => void, onUpdateAgentConfig: (config: Partial<Node['agentConfig']>) => void }> = ({ node, onRun, onUpdateAgentConfig }) => {
@@ -202,10 +323,15 @@ const UnexecutedNode: React.FC<{ node: Node, onRun: (parts: Part[]) => void, onU
     )
 }
 
-export const ChatNode: React.FC<ChatNodeProps> = ({ node, onSendMessage, onBranch, onRun, onDragStart, onEditMessage, onSync, onDelete, onUpdateAgentConfig, onStartEdgeCreation, onCompleteEdgeCreation, onResizeStart }) => {
+export const ChatNode: React.FC<ChatNodeProps> = ({ node, onSendMessage, onBranch, onRun, onDragStart, onEditMessage, onSync, onDelete, onUpdateAgentConfig, onStartEdgeCreation, onCompleteEdgeCreation, onResizeStart, onRename }) => {
   const [input, setInput] = useState('');
   const [editingMessage, setEditingMessage] = useState<{index: number; parts: Part[]} | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [nameDraft, setNameDraft] = useState(getDefaultNodeTitle(node));
+
+  useEffect(() => {
+    setNameDraft(getDefaultNodeTitle(node));
+  }, [node.title, node.type, node.agentConfig?.agentName]);
   
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -238,24 +364,57 @@ export const ChatNode: React.FC<ChatNodeProps> = ({ node, onSendMessage, onBranc
   return (
     <div 
         onWheel={e => e.stopPropagation()}
+        onMouseUpCapture={() => onCompleteEdgeCreation(node.id, 'input')}
         className={`node-interactive group relative w-full h-full flex flex-col backdrop-blur-md rounded-2xl shadow-2xl border cursor-auto ${nodeClass}`}
     >
         {/* Input Handle */}
         <div 
-            onMouseDown={(e) => onStartEdgeCreation(e, node.id, 'input')}
-            onMouseUp={() => onCompleteEdgeCreation(node.id, 'input')}
+            onMouseUp={(e) => {
+                e.stopPropagation();
+                onCompleteEdgeCreation(node.id, 'input');
+            }}
             title="Input"
-            className="node-interactive absolute top-8 -left-2 w-4 h-4 bg-gray-600 hover:bg-indigo-500 rounded-full cursor-pointer border-2 border-gray-800 transition-colors opacity-50 group-hover:opacity-100"
-        />
+            className="node-interactive absolute top-1/2 -translate-y-1/2 -left-6 w-8 h-12 flex items-center justify-center cursor-pointer"
+        >
+            <div className="w-4 h-4 bg-gray-600 hover:bg-indigo-500 rounded-full cursor-pointer border-2 border-gray-800 transition-colors opacity-50 group-hover:opacity-100" />
+        </div>
 
         {/* Output Handle */}
         <div 
             onMouseDown={(e) => onStartEdgeCreation(e, node.id, 'output')}
             title="Output"
-            className="node-interactive absolute top-8 -right-2 w-4 h-4 bg-indigo-600 hover:bg-indigo-500 rounded-full cursor-pointer border-2 border-gray-800 transition-colors opacity-50 group-hover:opacity-100"
-        />
+            className="node-interactive absolute top-1/2 -translate-y-1/2 -right-6 w-8 h-12 flex items-center justify-center cursor-pointer"
+        >
+            <div className="w-4 h-4 bg-indigo-600 hover:bg-indigo-500 rounded-full cursor-pointer border-2 border-gray-800 transition-colors opacity-50 group-hover:opacity-100" />
+        </div>
         
         <NodeHeader onDragStart={(e) => onDragStart(e, node.id)} node={node} onSync={() => onSync(node.id)} onDelete={() => onDelete(node.id)} />
+        <div className="px-4 pt-2">
+            <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1">Nome do nó</label>
+            <input
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onBlur={() => {
+                    const trimmed = nameDraft.trim();
+                    if (!trimmed) {
+                        setNameDraft(getDefaultNodeTitle(node));
+                        return;
+                    }
+                    if (!node.title || trimmed !== node.title) {
+                        onRename(node.id, trimmed);
+                    }
+                }}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                        (e.target as HTMLInputElement).blur();
+                    } else if (e.key === 'Escape') {
+                        setNameDraft(getDefaultNodeTitle(node));
+                        (e.target as HTMLInputElement).blur();
+                    }
+                }}
+                className="w-full bg-gray-800 text-gray-100 rounded-lg px-3 py-1.5 text-sm border border-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+        </div>
         
         {node.isExecuted === false ? (
             <UnexecutedNode node={node} onRun={(parts) => onRun(node.id, parts)} onUpdateAgentConfig={onUpdateAgentConfig} />

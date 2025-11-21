@@ -9,7 +9,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ onAddNode, onReset }) => {
   return (
-    <div className="node-interactive fixed top-4 left-4 z-10 bg-gray-800/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-700/50 p-2 flex flex-col gap-2 text-sm">
+    <div className="node-interactive fixed top-4 left-4 sm:left-72 z-10 bg-gray-800/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-700/50 p-2 flex flex-col gap-2 text-sm">
       <div className="px-2 pt-1 pb-2 text-xs font-semibold text-gray-400">Nodes</div>
       <button 
         onClick={() => onAddNode(NodeType.CHAT)}
@@ -24,6 +24,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ onAddNode, onReset }) => {
       >
         <ImageIcon className="w-5 h-5 text-teal-400" />
         <span>Image Node</span>
+      </button>
+      <button 
+        onClick={() => onAddNode(NodeType.FILE)}
+        className="flex items-center gap-3 w-full px-3 py-2 text-left text-gray-200 hover:bg-gray-700/70 rounded-md transition-colors"
+      >
+        <FilePlusIcon className="w-5 h-5 text-sky-400" />
+        <span>File Node</span>
       </button>
       <button 
         onClick={() => onAddNode(NodeType.AGENT)}

@@ -1,44 +1,79 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { ChatNode } from './components/ChatNode';
 import { GroupNode } from './components/GroupNode';
-import { type Node, type Message, type Part, Role, NodeType, type Edge } from './types';
+import FileNode from './components/FileNode';
+import WebNode from './components/WebNode';
+import { type Node, type Message, type Part, Role, NodeType, type Edge, type FileData } from './types';
 import { generateText } from './services/geminiService';
 import { ZoomInIcon, ZoomOutIcon, LocateIcon } from './components/Icons';
 import { Sidebar } from './components/Sidebar';
+import { WorkspaceHistorySidebar } from './components/WorkspaceHistorySidebar';
+import ConnectionLine from './components/ConnectionLine';
 
 const NODE_WIDTH = 352; // 22rem
 const NODE_DEFAULT_HEIGHT = 450;
 const NODE_SPACING = 64; // 4rem
 
+const getDefaultTitle = (type: NodeType) => {
+  switch (type) {
+    case NodeType.CHAT:
+      return 'Chat Node';
+    case NodeType.IMAGE:
+      return 'Image Node';
+    case NodeType.AGENT:
+      return 'Agent Node';
+    case NodeType.FILE:
+      return 'File Node';
+    case NodeType.WEB:
+      return 'Web Browser';
+    case NodeType.GROUP:
+      return 'Group';
+    default:
+      return 'Node';
+  }
+};
+
+interface Workspace {
+  id: string;
+  name: string;
+  nodes: Node[];
+  edges: Edge[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 const App: React.FC = () => {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [transform, setTransform] = useState({ scale: 1, translateX: 0, translateY: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [draggingNode, setDraggingNode] = useState<{ id: string; offsetX: number; offsetY: number } | null>(null);
   const [resizingNode, setResizingNode] = useState<{ id: string; startX: number; startY: number; startWidth: number; startHeight: number } | null>(null);
   const [edgeCreation, setEdgeCreation] = useState<{ sourceNodeId: string; sourceHandle: string; sourcePos: { x: number; y: number }; currentPos: { x: number; y: number }; } | null>(null);
-  const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
 
-  const createInitialNode = (): Node => ({
+  const createInitialNode = useCallback((): Node => ({
     id: `node-${Date.now()}`,
     type: NodeType.CHAT,
     position: { x: 0, y: 0 },
     size: { width: NODE_WIDTH, height: NODE_DEFAULT_HEIGHT },
+    title: getDefaultTitle(NodeType.CHAT),
     messages: [{ role: Role.MODEL, parts: [{ text: 'Olá! Como posso te ajudar a explorar suas ideias hoje?' }] }],
     parentId: null,
     isLoading: false,
     isExecuted: true,
-  });
+  }), []);
 
-  const centerCanvas = useCallback((nodeId?: string) => {
+  const centerCanvas = useCallback((nodeId?: string, targetNodes?: Node[]) => {
     if (!canvasRef.current) return;
     const { width, height } = canvasRef.current.getBoundingClientRect();
-    let targetNode = nodes.find(n => n.id === nodeId);
-    if (!targetNode && nodes.length > 0) {
-      targetNode = nodes[nodes.length - 1];
+    const referenceNodes = targetNodes ?? nodes;
+    let targetNode = referenceNodes.find(n => n.id === nodeId);
+    if (!targetNode && referenceNodes.length > 0) {
+      targetNode = referenceNodes[referenceNodes.length - 1];
     }
 
     if (targetNode) {
@@ -51,9 +86,87 @@ const App: React.FC = () => {
     }
   }, [nodes, transform.scale]);
 
-  useEffect(() => {
-    setNodes([createInitialNode()]);
+  const handleCreateWorkspace = useCallback((rawName?: string) => {
+    setWorkspaces(prev => {
+      const timestamp = Date.now();
+      const workspaceNodes = [createInitialNode()];
+      const newWorkspace: Workspace = {
+        id: `workspace-${timestamp}`,
+        name: rawName?.trim() || `Canvas ${prev.length + 1}`,
+        nodes: workspaceNodes,
+        edges: [],
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      setActiveWorkspaceId(newWorkspace.id);
+      setNodes(workspaceNodes);
+      setEdges([]);
+      centerCanvas(undefined, workspaceNodes);
+      return [...prev, newWorkspace];
+    });
+  }, [centerCanvas, createInitialNode]);
+
+  const handleSelectWorkspace = useCallback((workspaceId: string) => {
+    if (workspaceId === activeWorkspaceId) return;
+    const workspace = workspaces.find(ws => ws.id === workspaceId);
+    if (!workspace) return;
+    setActiveWorkspaceId(workspaceId);
+    setNodes(workspace.nodes);
+    setEdges(workspace.edges ?? []);
+    centerCanvas(workspace.nodes[workspace.nodes.length - 1]?.id, workspace.nodes);
+  }, [activeWorkspaceId, centerCanvas, workspaces]);
+
+  const handleRenameWorkspace = useCallback((workspaceId: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setWorkspaces(prev => prev.map(ws => ws.id === workspaceId ? { ...ws, name: trimmed, updatedAt: Date.now() } : ws));
   }, []);
+
+  const handleDeleteWorkspace = useCallback((workspaceId: string) => {
+    setWorkspaces(prev => {
+      const remaining = prev.filter(ws => ws.id !== workspaceId);
+      if (remaining.length === prev.length) return prev;
+
+      if (remaining.length === 0) {
+        const timestamp = Date.now();
+        const workspaceNodes = [createInitialNode()];
+        const fallbackWorkspace: Workspace = {
+          id: `workspace-${timestamp}`,
+          name: 'Canvas 1',
+          nodes: workspaceNodes,
+          edges: [],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+        setActiveWorkspaceId(fallbackWorkspace.id);
+        setNodes(workspaceNodes);
+        setEdges([]);
+        centerCanvas(undefined, workspaceNodes);
+        return [fallbackWorkspace];
+      }
+
+      if (workspaceId === activeWorkspaceId) {
+        const nextWorkspace = remaining[0];
+        setActiveWorkspaceId(nextWorkspace.id);
+        setNodes(nextWorkspace.nodes);
+        setEdges(nextWorkspace.edges ?? []);
+        centerCanvas(nextWorkspace.nodes[nextWorkspace.nodes.length - 1]?.id, nextWorkspace.nodes);
+      }
+
+      return remaining;
+    });
+  }, [activeWorkspaceId, centerCanvas, createInitialNode]);
+
+  useEffect(() => {
+    if (workspaces.length === 0) {
+      handleCreateWorkspace('Canvas 1');
+    }
+  }, [workspaces.length, handleCreateWorkspace]);
+
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    setWorkspaces(prev => prev.map(ws => ws.id === activeWorkspaceId ? { ...ws, nodes, edges, updatedAt: Date.now() } : ws));
+  }, [activeWorkspaceId, nodes, edges]);
 
   useEffect(() => {
     if (nodes.length === 1) {
@@ -82,6 +195,7 @@ const App: React.FC = () => {
             type: NodeType.CHAT,
             position: newPosition,
             size: { width: NODE_WIDTH, height: NODE_DEFAULT_HEIGHT },
+            title: getDefaultTitle(NodeType.CHAT),
             messages: [sourceMessage], 
             parentId: parentId,
             parentMessageIndex: parentMessageIndex,
@@ -111,6 +225,7 @@ const App: React.FC = () => {
       type: newNodeType,
       position: newPosition,
       size: { width: NODE_WIDTH, height: NODE_DEFAULT_HEIGHT },
+      title: getDefaultTitle(newNodeType),
       messages: [{ role: Role.MODEL, parts: initialParts }],
       parentId: parentId,
       parentMessageIndex: parentMessageIndex,
@@ -136,7 +251,37 @@ const App: React.FC = () => {
         type: NodeType.GROUP,
         position: { x: centerX, y: centerY },
         size: { width: 500, height: 400 },
+        title: getDefaultTitle(NodeType.GROUP),
         parentId: null,
+      };
+      setNodes(prev => [...prev, newNode]);
+      return;
+    }
+
+    if (type === NodeType.FILE) {
+      const newNode: Node = {
+        id: `node-${Date.now()}`,
+        type: NodeType.FILE,
+        position: { x: centerX, y: centerY },
+        size: { width: 420, height: 520 },
+        title: getDefaultTitle(NodeType.FILE),
+        parentId: null,
+        isExecuted: true,
+      };
+      setNodes(prev => [...prev, newNode]);
+      return;
+    }
+
+    if (type === NodeType.WEB) {
+      const newNode: Node = {
+        id: `node-${Date.now()}`,
+        type: NodeType.WEB,
+        position: { x: centerX, y: centerY },
+        size: { width: 520, height: 500 },
+        title: getDefaultTitle(NodeType.WEB),
+        parentId: null,
+        isExecuted: true,
+        web: { url: 'https://www.google.com' },
       };
       setNodes(prev => [...prev, newNode]);
       return;
@@ -156,6 +301,7 @@ const App: React.FC = () => {
         type: type,
         position: { x: centerX, y: centerY },
         size: { width: NODE_WIDTH, height: NODE_DEFAULT_HEIGHT },
+        title: getDefaultTitle(type),
         messages: initialMessages,
         parentId: null,
         isLoading: false,
@@ -166,19 +312,10 @@ const App: React.FC = () => {
   }
 
   const handleDeleteNode = useCallback((nodeId: string) => {
-    const confirmMessage = 'Tem certeza de que deseja excluir este nó? (Os filhos se tornarão nós independentes)';
-    if (!window.confirm(confirmMessage)) {
-        return;
-    }
-
     setNodes(prevNodes => {
-        // Filter out the node to be deleted
         const remainingNodes = prevNodes.filter(n => n.id !== nodeId);
-        
-        // Map over the remaining nodes to update any children of the deleted node
         return remainingNodes.map(n => {
             if (n.parentId === nodeId) {
-                // This node was a child of the deleted node, promote it to a root node
                 return {
                     ...n,
                     parentId: null,
@@ -192,14 +329,25 @@ const App: React.FC = () => {
     setEdges(prevEdges => prevEdges.filter(edge => edge.source !== nodeId && edge.target !== nodeId));
   }, []);
 
-  const handleDeleteEdge = useCallback((edgeId: string) => {
-    setEdges(prevEdges => prevEdges.filter(edge => edge.id !== edgeId));
+  const handleUpdateFileNode = useCallback((nodeId: string, fileData: FileData | null) => {
+    setNodes(prev => prev.map(node => node.id === nodeId ? { ...node, file: fileData ?? undefined } : node));
+  }, []);
+
+  const handleUpdateWebNode = useCallback((nodeId: string, url: string) => {
+    setNodes(prev => prev.map(node => node.id === nodeId ? { ...node, web: { url } } : node));
+  }, []);
+
+  const handleRenameNode = useCallback((nodeId: string, title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    setNodes(prev => prev.map(node => node.id === nodeId ? { ...node, title: trimmed } : node));
   }, []);
 
   const handleResetCanvas = () => {
-    setNodes([createInitialNode()]);
+    const initialNode = createInitialNode();
+    setNodes([initialNode]);
     setEdges([]);
-    centerCanvas();
+    centerCanvas(initialNode.id, [initialNode]);
   }
   
   const handleRunNode = useCallback(async (nodeId: string, parts: Part[]) => {
@@ -450,19 +598,23 @@ const App: React.FC = () => {
   }, [nodes, transform.scale, transform.translateX, transform.translateY]);
 
   const handleCompleteEdgeCreation = useCallback((targetNodeId: string, targetHandle: string) => {
-      if (edgeCreation && edgeCreation.sourceNodeId !== targetNodeId && edgeCreation.sourceHandle !== targetHandle) {
+      if (
+        edgeCreation &&
+        edgeCreation.sourceNodeId !== targetNodeId &&
+        edgeCreation.sourceHandle === 'output' &&
+        targetHandle === 'input'
+      ) {
           const edgeExists = edges.some(edge => 
-              (edge.source === edgeCreation.sourceNodeId && edge.target === targetNodeId) ||
-              (edge.source === targetNodeId && edge.target === edgeCreation.sourceNodeId)
+              edge.source === edgeCreation.sourceNodeId && edge.target === targetNodeId
           );
 
           if (!edgeExists) {
               const newEdge: Edge = {
                   id: `edge-${Date.now()}`,
                   source: edgeCreation.sourceNodeId,
-                  sourceHandle: edgeCreation.sourceHandle,
+                  sourceHandle: 'output',
                   target: targetNodeId,
-                  targetHandle: targetHandle,
+                  targetHandle: 'input',
               };
               setEdges(prev => [...prev, newEdge]);
           }
@@ -489,8 +641,8 @@ const App: React.FC = () => {
   const getNodeAnchor = (node: Node, handle: 'input' | 'output' | string): { x: number; y: number } => {
     const isGroup = node.type === NodeType.GROUP;
     const width = node.size?.width ?? (isGroup ? 0 : NODE_WIDTH);
-    const height = node.size?.height ?? (isGroup ? 0 : 80);
-    const yPos = node.position.y + (isGroup ? height / 2 : 40);
+    const height = node.size?.height ?? (isGroup ? 0 : NODE_DEFAULT_HEIGHT);
+    const yPos = node.position.y + height / 2;
 
     if (handle === 'output') { // Right side
         return { x: node.position.x + width, y: yPos };
@@ -513,29 +665,31 @@ const App: React.FC = () => {
         if (hasManualEdge) return null;
 
         const parentWidth = parentNode.size?.width ?? NODE_WIDTH;
+        const parentHeight = parentNode.size?.height ?? NODE_DEFAULT_HEIGHT;
+        const nodeHeight = node.size?.height ?? NODE_DEFAULT_HEIGHT;
         const startX = parentNode.position.x + parentWidth;
-        const startY = parentNode.position.y + 40;
+        const startY = parentNode.position.y + parentHeight / 2;
         const endX = node.position.x;
-        const endY = node.position.y + 40;
+        const endY = node.position.y + nodeHeight / 2;
         
-        const isOutOfSync = node.isOutOfSync;
+        const isOutOfSync = Boolean(node.isOutOfSync);
 
         return (
-            <path
+            <ConnectionLine
               key={`line-${node.id}`}
-              d={`M ${startX} ${startY} C ${startX + NODE_SPACING / 2} ${startY}, ${endX - NODE_SPACING / 2} ${endY}, ${endX} ${endY}`}
-              stroke={isOutOfSync ? "#F59E0B" : "#4A5568"}
-              strokeWidth="2"
-              fill="none"
-              strokeDasharray={isOutOfSync ? "4 4" : "none"}
-              style={{ transition: 'stroke 0.3s, stroke-dasharray 0.3s' }}
+              sourceX={startX}
+              sourceY={startY}
+              targetX={endX}
+              targetY={endY}
+              color={isOutOfSync ? '#F59E0B' : '#4A5568'}
+              dashed={isOutOfSync}
             />
         );
     });
   };
   
   const renderEdges = () => {
-    const edgePaths = edges.map(edge => {
+    const edgeElements = edges.map(edge => {
         const sourceNode = nodes.find(n => n.id === edge.source);
         const targetNode = nodes.find(n => n.id === edge.target);
         if (!sourceNode || !targetNode) return null;
@@ -544,47 +698,36 @@ const App: React.FC = () => {
         const targetPos = getNodeAnchor(targetNode, edge.targetHandle);
         
         const isOutOfSync = targetNode.parentId === sourceNode.id && targetNode.isOutOfSync;
-        const isHovered = hoveredEdgeId === edge.id;
-        const strokeColor = isOutOfSync ? "#F59E0B" : isHovered ? "#A78BFA" : "#6B7280";
-        const markerId = `url(#arrowhead-${isOutOfSync ? 'outofsync' : isHovered ? 'hover' : 'default'})`;
-
-        const pathD = `M ${sourcePos.x} ${sourcePos.y} C ${sourcePos.x + 80} ${sourcePos.y}, ${targetPos.x - 80} ${targetPos.y}, ${targetPos.x} ${targetPos.y}`;
-
-        const midX = 0.125 * sourcePos.x + 0.375 * (sourcePos.x + 80) + 0.375 * (targetPos.x - 80) + 0.125 * targetPos.x;
-        const midY = 0.125 * sourcePos.y + 0.375 * sourcePos.y + 0.375 * targetPos.y + 0.125 * targetPos.y;
+        const strokeColor = isOutOfSync ? '#F59E0B' : '#6B7280';
 
         return (
-            <g key={edge.id} onMouseEnter={() => setHoveredEdgeId(edge.id)} onMouseLeave={() => setHoveredEdgeId(null)} style={{ cursor: 'pointer' }}>
-                <path d={pathD} stroke="transparent" strokeWidth="20" fill="none" />
-                <path 
-                    d={pathD} 
-                    stroke={strokeColor}
-                    strokeWidth={isHovered ? 3 : 2} 
-                    fill="none" 
-                    markerEnd={markerId}
-                    strokeDasharray={isOutOfSync ? "4 4" : "none"}
-                    style={{ transition: 'stroke 0.2s, stroke-width 0.2s, stroke-dasharray 0.3s' }}
-                />
-                {isHovered && (
-                    <g 
-                        transform={`translate(${midX - 12}, ${midY - 12})`} 
-                        onClick={(e) => { e.stopPropagation(); handleDeleteEdge(edge.id); }}
-                    >
-                        <rect width="24" height="24" rx="12" fill="#1F2937" stroke={strokeColor} strokeWidth="1" />
-                        <path d="M 16 8 L 8 16 M 8 8 L 16 16" stroke="#9CA3AF" strokeWidth="1.5" />
-                    </g>
-                )}
-            </g>
+            <ConnectionLine
+              key={edge.id}
+              sourceX={sourcePos.x}
+              sourceY={sourcePos.y}
+              targetX={targetPos.x}
+              targetY={targetPos.y}
+              color={strokeColor}
+              dashed={isOutOfSync}
+            />
         );
     });
     
     if (edgeCreation) {
         const { sourcePos, currentPos } = edgeCreation;
-         edgePaths.push(
-             <path key="preview-edge" d={`M ${sourcePos.x} ${sourcePos.y} C ${sourcePos.x + 80} ${sourcePos.y}, ${currentPos.x - 80} ${currentPos.y}, ${currentPos.x} ${currentPos.y}`} stroke="#A78BFA" strokeWidth="2" fill="none" strokeDasharray="5 5" />
-         );
+        edgeElements.push(
+            <ConnectionLine
+              key="preview-edge"
+              sourceX={sourcePos.x}
+              sourceY={sourcePos.y}
+              targetX={currentPos.x}
+              targetY={currentPos.y}
+              color="#A78BFA"
+              dashed
+            />
+        );
     }
-    return edgePaths;
+    return edgeElements;
   }
   
   const groupNodes = nodes.filter(n => n.type === NodeType.GROUP);
@@ -600,6 +743,14 @@ const App: React.FC = () => {
       onMouseLeave={handleMouseUp}
       onWheel={handleWheel}
     >
+      <WorkspaceHistorySidebar
+        workspaces={workspaces}
+        activeWorkspaceId={activeWorkspaceId}
+        onSelectWorkspace={handleSelectWorkspace}
+        onCreateWorkspace={handleCreateWorkspace}
+        onRenameWorkspace={handleRenameWorkspace}
+        onDeleteWorkspace={handleDeleteWorkspace}
+      />
       <Sidebar onAddNode={addNodeFromMenu} onReset={handleResetCanvas} />
       <div className="absolute inset-0 bg-[radial-gradient(#374151_1px,transparent_1px)] [background-size:32px_32px]"></div>
       <div
@@ -607,17 +758,6 @@ const App: React.FC = () => {
         style={{ transform: `translate(${transform.translateX}px, ${transform.translateY}px) scale(${transform.scale})`, transition: isPanning || draggingNode || resizingNode ? 'none' : 'transform 0.1s' }}
       >
         <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible' }}>
-            <defs>
-              <marker id="arrowhead-default" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto" fill="#6B7280">
-                <polygon points="0 0, 10 3.5, 0 7" />
-              </marker>
-              <marker id="arrowhead-outofsync" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto" fill="#F59E0B">
-                <polygon points="0 0, 10 3.5, 0 7" />
-              </marker>
-              <marker id="arrowhead-hover" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto" fill="#A78BFA">
-                <polygon points="0 0, 10 3.5, 0 7" />
-              </marker>
-            </defs>
             {renderLines()}
             {renderEdges()}
         </svg>
@@ -631,6 +771,7 @@ const App: React.FC = () => {
                 onDelete={handleDeleteNode}
                 onStartEdgeCreation={handleStartEdgeCreation}
                 onCompleteEdgeCreation={handleCompleteEdgeCreation}
+                onRename={handleRenameNode}
             />
         ))}
 
@@ -645,20 +786,34 @@ const App: React.FC = () => {
               height: `${node.size?.height ?? NODE_DEFAULT_HEIGHT}px`,
             }}
           >
-            <ChatNode
-              node={node}
-              onSendMessage={(parts, history) => handleSendMessage(node.id, parts, history)}
-              onBranch={addNodeFromBranch}
-              onRun={handleRunNode}
-              onDragStart={handleNodeDragStart}
-              onEditMessage={handleEditMessage}
-              onSync={handleSyncNode}
-              onDelete={handleDeleteNode}
-              onUpdateAgentConfig={(config) => handleUpdateAgentConfig(node.id, config)}
-              onStartEdgeCreation={handleStartEdgeCreation}
-              onCompleteEdgeCreation={handleCompleteEdgeCreation}
-              onResizeStart={handleNodeResizeStart}
-            />
+            {node.type === NodeType.FILE ? (
+              <FileNode
+                node={node}
+                onDragStart={handleNodeDragStart}
+                onDelete={handleDeleteNode}
+                onStartEdgeCreation={handleStartEdgeCreation}
+                onCompleteEdgeCreation={handleCompleteEdgeCreation}
+                onResizeStart={handleNodeResizeStart}
+                onRename={handleRenameNode}
+                onFileChange={handleUpdateFileNode}
+              />
+            ) : (
+              <ChatNode
+                node={node}
+                onSendMessage={(parts, history) => handleSendMessage(node.id, parts, history)}
+                onBranch={addNodeFromBranch}
+                onRun={handleRunNode}
+                onDragStart={handleNodeDragStart}
+                onEditMessage={handleEditMessage}
+                onSync={handleSyncNode}
+                onDelete={handleDeleteNode}
+                onUpdateAgentConfig={(config) => handleUpdateAgentConfig(node.id, config)}
+                onStartEdgeCreation={handleStartEdgeCreation}
+                onCompleteEdgeCreation={handleCompleteEdgeCreation}
+                onResizeStart={handleNodeResizeStart}
+                onRename={handleRenameNode}
+              />
+            )}
           </div>
         ))}
       </div>
