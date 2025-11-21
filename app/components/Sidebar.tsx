@@ -33,6 +33,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ onAddNode, onReset }) => {
         <span>File Node</span>
       </button>
       <button 
+        onClick={() => onAddNode(NodeType.WEB)}
+        className="flex items-center gap-3 w-full px-3 py-2 text-left text-gray-200 hover:bg-gray-700/70 rounded-md transition-colors"
+      >
+        <ImageIcon className="w-5 h-5 text-blue-400" />
+        <span>Web Node</span>
+      </button>
+      <button 
         onClick={() => onAddNode(NodeType.AGENT)}
         className="flex items-center gap-3 w-full px-3 py-2 text-left text-gray-200 hover:bg-gray-700/70 rounded-md transition-colors"
       >

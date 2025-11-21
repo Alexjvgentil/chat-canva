@@ -1,5 +1,5 @@
 {
-  "name": "Gemini Infinite Canvas Chat",
+  "name": "Infinite Canvas",
   "description": "An infinite canvas conversational chat application powered by the Gemini API. Branch conversations, generate images from text, and explore ideas in a boundless visual space.",
   "requestFramePermissions": []
 }

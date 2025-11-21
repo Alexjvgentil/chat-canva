@@ -797,6 +797,17 @@ const App: React.FC = () => {
                 onRename={handleRenameNode}
                 onFileChange={handleUpdateFileNode}
               />
+            ) : node.type === NodeType.WEB ? (
+              <WebNode
+                node={node}
+                onDragStart={handleNodeDragStart}
+                onDelete={handleDeleteNode}
+                onStartEdgeCreation={handleStartEdgeCreation}
+                onCompleteEdgeCreation={handleCompleteEdgeCreation}
+                onResizeStart={handleNodeResizeStart}
+                onRename={handleRenameNode}
+                onUrlChange={handleUpdateWebNode}
+              />
             ) : (
               <ChatNode
                 node={node}
@@ -823,7 +834,7 @@ const App: React.FC = () => {
         <button onClick={() => centerCanvas()} className="p-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded-md transition-colors"><LocateIcon/></button>
       </div>
        <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 text-sm text-gray-400">
-            <span>Gemini Infinite Canvas</span>
+            <span>Infinite Canvas</span>
         </div>
     </div>
   );

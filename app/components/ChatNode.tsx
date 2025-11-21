@@ -116,6 +116,40 @@ const MarkdownContent: React.FC<{ text: string }> = ({ text }) => {
     );
 };
 
+const TOOL_OPTIONS = [
+    'Search Web',
+    'Search Maps',
+    'Get Pages',
+    'Get Weather',
+    'Code Execution'
+];
+
+const ToolSelector: React.FC<{ selected: string[]; onChange: (tools: string[]) => void }> = ({ selected, onChange }) => {
+    const toggleTool = (tool: string) => {
+        if (selected.includes(tool)) {
+            onChange(selected.filter(t => t !== tool));
+        } else {
+            onChange([...selected, tool]);
+        }
+    };
+
+    return (
+        <div className="bg-gray-700/60 rounded-lg p-2 border border-gray-600 flex flex-col gap-2">
+            {TOOL_OPTIONS.map(tool => (
+                <label key={tool} className="flex items-center gap-2 text-sm text-gray-200">
+                    <input
+                        type="checkbox"
+                        checked={selected.includes(tool)}
+                        onChange={() => toggleTool(tool)}
+                        className="accent-indigo-500"
+                    />
+                    <span>{tool}</span>
+                </label>
+            ))}
+        </div>
+    );
+};
+
 const MessageBubble: React.FC<{ 
     message: Message, 
     messageIndex: number,
@@ -292,7 +326,10 @@ const UnexecutedNode: React.FC<{ node: Node, onRun: (parts: Part[]) => void, onU
                          </div>
                          <div>
                             <label className="block text-xs text-gray-400 mb-1">Tools</label>
-                            <input type="text" placeholder="Ex: search, calculator" className="w-full bg-gray-700 text-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
+                            <ToolSelector
+                                selected={node.agentConfig?.tools ?? []}
+                                onChange={(tools) => onUpdateAgentConfig({ tools })}
+                            />
                          </div>
                     </div>
                 )}
