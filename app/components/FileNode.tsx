@@ -11,6 +11,8 @@ interface FileNodeProps {
   onResizeStart: (e: React.MouseEvent, nodeId: string) => void;
   onRename: (nodeId: string, title: string) => void;
   onFileChange: (nodeId: string, file: FileData | null) => void;
+  onFocusToggle?: (nodeId: string) => void;
+  isFocused?: boolean;
 }
 
 const formatBytes = (bytes: number) => {
@@ -46,7 +48,7 @@ const getPreview = (node: Node) => {
   );
 };
 
-const FileNode: React.FC<FileNodeProps> = ({ node, onDragStart, onDelete, onStartEdgeCreation, onCompleteEdgeCreation, onResizeStart, onRename, onFileChange }) => {
+const FileNode: React.FC<FileNodeProps> = ({ node, onDragStart, onDelete, onStartEdgeCreation, onCompleteEdgeCreation, onResizeStart, onRename, onFileChange, onFocusToggle, isFocused }) => {
   const [nameDraft, setNameDraft] = useState(node.title ?? 'File Node');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -81,15 +83,26 @@ const FileNode: React.FC<FileNodeProps> = ({ node, onDragStart, onDelete, onStar
         className="group flex items-center justify-between p-2 text-xs text-gray-300 cursor-move bg-gray-900/30 rounded-t-2xl"
       >
         <span className="font-semibold">Arquivo</span>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(node.id);
-          }}
-          className="p-1 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition"
-        >
-          <TrashIcon className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onFocusToggle?.(node.id);
+            }}
+            className="px-2 py-1 text-[10px] rounded bg-gray-700 text-gray-100 hover:bg-gray-600 opacity-0 group-hover:opacity-100 transition"
+          >
+            {isFocused ? 'Fechar' : 'Foco'}
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(node.id);
+            }}
+            className="p-1 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition"
+          >
+            <TrashIcon className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       <div className="px-4 pt-2">

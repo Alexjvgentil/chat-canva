@@ -11,6 +11,8 @@ interface WebNodeProps {
   onResizeStart: (e: React.MouseEvent, nodeId: string) => void;
   onRename: (nodeId: string, title: string) => void;
   onUrlChange: (nodeId: string, url: string) => void;
+  onFocusToggle?: (nodeId: string) => void;
+  isFocused?: boolean;
 }
 
 const normalizeUrl = (value: string) => {
@@ -19,7 +21,7 @@ const normalizeUrl = (value: string) => {
   return `https://${value}`;
 };
 
-const WebNode: React.FC<WebNodeProps> = ({ node, onDragStart, onDelete, onStartEdgeCreation, onCompleteEdgeCreation, onResizeStart, onRename, onUrlChange }) => {
+const WebNode: React.FC<WebNodeProps> = ({ node, onDragStart, onDelete, onStartEdgeCreation, onCompleteEdgeCreation, onResizeStart, onRename, onUrlChange, onFocusToggle, isFocused }) => {
   const [nameDraft, setNameDraft] = useState(node.title ?? 'Web Browser');
   const [urlInput, setUrlInput] = useState(node.web?.url ?? 'https://www.google.com');
   const [currentUrl, setCurrentUrl] = useState(node.web?.url ?? 'https://www.google.com');
@@ -52,15 +54,26 @@ const WebNode: React.FC<WebNodeProps> = ({ node, onDragStart, onDelete, onStartE
         className="group flex items-center justify-between p-2 text-xs text-gray-300 cursor-move bg-gray-900/30 rounded-t-2xl"
       >
         <span className="font-semibold">Web Search</span>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(node.id);
-          }}
-          className="p-1 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition"
-        >
-          <TrashIcon className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onFocusToggle?.(node.id);
+            }}
+            className="px-2 py-1 text-[10px] rounded bg-gray-700 text-gray-100 hover:bg-gray-600 opacity-0 group-hover:opacity-100 transition"
+          >
+            {isFocused ? 'Fechar' : 'Foco'}
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(node.id);
+            }}
+            className="p-1 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition"
+          >
+            <TrashIcon className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       <div className="px-4 pt-2 space-y-3">

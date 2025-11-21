@@ -53,6 +53,7 @@ const App: React.FC = () => {
   const [draggingNode, setDraggingNode] = useState<{ id: string; offsetX: number; offsetY: number } | null>(null);
   const [resizingNode, setResizingNode] = useState<{ id: string; startX: number; startY: number; startWidth: number; startHeight: number } | null>(null);
   const [edgeCreation, setEdgeCreation] = useState<{ sourceNodeId: string; sourceHandle: string; sourcePos: { x: number; y: number }; currentPos: { x: number; y: number }; } | null>(null);
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
 
   const createInitialNode = useCallback((): Node => ({
@@ -336,6 +337,10 @@ const App: React.FC = () => {
   const handleUpdateWebNode = useCallback((nodeId: string, url: string) => {
     setNodes(prev => prev.map(node => node.id === nodeId ? { ...node, web: { url } } : node));
   }, []);
+
+  const handleFocusNode = (nodeId: string) => {
+    setFocusedNodeId(nodeId);
+  };
 
   const handleRenameNode = useCallback((nodeId: string, title: string) => {
     const trimmed = title.trim();
@@ -730,8 +735,78 @@ const App: React.FC = () => {
     return edgeElements;
   }
   
+  const renderNodeComponent = (node: Node, options?: { modal?: boolean }) => {
+    const isModal = options?.modal ?? false;
+    const dragHandler = isModal ? ((e: React.MouseEvent, nodeId: string) => { e.stopPropagation(); }) : handleNodeDragStart;
+    const resizeHandler = isModal ? ((e: React.MouseEvent, nodeId: string) => { e.stopPropagation(); }) : handleNodeResizeStart;
+    const startEdgeHandler = isModal ? ((e: React.MouseEvent, nodeId: string, handle: string) => { e.stopPropagation(); }) : handleStartEdgeCreation;
+    const completeEdgeHandler = isModal ? (() => {}) : handleCompleteEdgeCreation;
+    const focusToggle = () => {
+      if (isModal) {
+        setFocusedNodeId(null);
+      } else {
+        handleFocusNode(node.id);
+      }
+    };
+
+    if (node.type === NodeType.FILE) {
+      return (
+        <FileNode
+          node={node}
+          onDragStart={dragHandler}
+          onDelete={handleDeleteNode}
+          onStartEdgeCreation={startEdgeHandler}
+          onCompleteEdgeCreation={completeEdgeHandler}
+          onResizeStart={resizeHandler}
+          onRename={handleRenameNode}
+          onFileChange={handleUpdateFileNode}
+          onFocusToggle={focusToggle}
+          isFocused={isModal}
+        />
+      );
+    }
+
+    if (node.type === NodeType.WEB) {
+      return (
+        <WebNode
+          node={node}
+          onDragStart={dragHandler}
+          onDelete={handleDeleteNode}
+          onStartEdgeCreation={startEdgeHandler}
+          onCompleteEdgeCreation={completeEdgeHandler}
+          onResizeStart={resizeHandler}
+          onRename={handleRenameNode}
+          onUrlChange={handleUpdateWebNode}
+          onFocusToggle={focusToggle}
+          isFocused={isModal}
+        />
+      );
+    }
+
+    return (
+      <ChatNode
+        node={node}
+        onSendMessage={(parts, history) => handleSendMessage(node.id, parts, history)}
+        onBranch={addNodeFromBranch}
+        onRun={handleRunNode}
+        onDragStart={dragHandler}
+        onEditMessage={handleEditMessage}
+        onSync={handleSyncNode}
+        onDelete={handleDeleteNode}
+        onUpdateAgentConfig={(config) => handleUpdateAgentConfig(node.id, config)}
+        onStartEdgeCreation={startEdgeHandler}
+        onCompleteEdgeCreation={completeEdgeHandler}
+        onResizeStart={resizeHandler}
+        onRename={handleRenameNode}
+        onFocusToggle={focusToggle}
+        isFocused={isModal}
+      />
+    );
+  };
+  
   const groupNodes = nodes.filter(n => n.type === NodeType.GROUP);
   const chatLikeNodes = nodes.filter(n => n.type !== NodeType.GROUP);
+  const focusedNode = focusedNodeId ? nodes.find(n => n.id === focusedNodeId) : null;
 
   return (
     <div
@@ -786,48 +861,21 @@ const App: React.FC = () => {
               height: `${node.size?.height ?? NODE_DEFAULT_HEIGHT}px`,
             }}
           >
-            {node.type === NodeType.FILE ? (
-              <FileNode
-                node={node}
-                onDragStart={handleNodeDragStart}
-                onDelete={handleDeleteNode}
-                onStartEdgeCreation={handleStartEdgeCreation}
-                onCompleteEdgeCreation={handleCompleteEdgeCreation}
-                onResizeStart={handleNodeResizeStart}
-                onRename={handleRenameNode}
-                onFileChange={handleUpdateFileNode}
-              />
-            ) : node.type === NodeType.WEB ? (
-              <WebNode
-                node={node}
-                onDragStart={handleNodeDragStart}
-                onDelete={handleDeleteNode}
-                onStartEdgeCreation={handleStartEdgeCreation}
-                onCompleteEdgeCreation={handleCompleteEdgeCreation}
-                onResizeStart={handleNodeResizeStart}
-                onRename={handleRenameNode}
-                onUrlChange={handleUpdateWebNode}
-              />
-            ) : (
-              <ChatNode
-                node={node}
-                onSendMessage={(parts, history) => handleSendMessage(node.id, parts, history)}
-                onBranch={addNodeFromBranch}
-                onRun={handleRunNode}
-                onDragStart={handleNodeDragStart}
-                onEditMessage={handleEditMessage}
-                onSync={handleSyncNode}
-                onDelete={handleDeleteNode}
-                onUpdateAgentConfig={(config) => handleUpdateAgentConfig(node.id, config)}
-                onStartEdgeCreation={handleStartEdgeCreation}
-                onCompleteEdgeCreation={handleCompleteEdgeCreation}
-                onResizeStart={handleNodeResizeStart}
-                onRename={handleRenameNode}
-              />
-            )}
+            {renderNodeComponent(node)}
           </div>
         ))}
       </div>
+      {focusedNode && (
+        <div className="fixed inset-0 z-40 bg-black/70 flex items-center justify-center p-6">
+          <div className="relative w-full max-w-5xl h-[85vh] bg-gray-900 rounded-2xl border border-gray-700 shadow-2xl overflow-hidden">
+            <div className="w-full h-full p-4">
+              <div className="w-full h-full">
+                {renderNodeComponent(focusedNode, { modal: true })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="absolute bottom-4 right-4 flex flex-col gap-2 p-2 bg-gray-800/50 backdrop-blur-sm rounded-lg">
         <button onClick={() => zoom('in')} className="p-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded-md transition-colors"><ZoomInIcon/></button>
         <button onClick={() => zoom('out')} className="p-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded-md transition-colors"><ZoomOutIcon/></button>

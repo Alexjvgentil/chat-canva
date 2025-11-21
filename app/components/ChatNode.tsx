@@ -16,6 +16,8 @@ interface ChatNodeProps {
   onCompleteEdgeCreation: (nodeId: string, handle: string) => void;
   onResizeStart: (e: React.MouseEvent, nodeId: string) => void;
   onRename: (nodeId: string, title: string) => void;
+  onFocusToggle?: (nodeId: string) => void;
+  isFocused?: boolean;
 }
 
 const escapeHtml = (text: string) =>
@@ -199,7 +201,7 @@ const MessageBubble: React.FC<{
 };
 
 
-const NodeHeader: React.FC<{ onDragStart: (e: React.MouseEvent) => void; node: Node; onSync: () => void; onDelete: () => void; }> = ({ onDragStart, node, onSync, onDelete }) => {
+const NodeHeader: React.FC<{ onDragStart: (e: React.MouseEvent) => void; node: Node; onSync: () => void; onDelete: () => void; onFocus?: () => void; isFocused?: boolean; }> = ({ onDragStart, node, onSync, onDelete, onFocus, isFocused }) => {
     const ICONS: Record<NodeType, React.ReactNode> = {
         [NodeType.CHAT]: <SparklesIcon className="w-4 h-4 text-gray-500"/>,
         [NodeType.IMAGE]: <ImageIcon className="w-4 h-4 text-gray-500"/>,
@@ -225,7 +227,10 @@ const NodeHeader: React.FC<{ onDragStart: (e: React.MouseEvent) => void; node: N
     }
 
     return (
-        <div onMouseDown={onDragStart} className="group flex items-center justify-between p-2 text-center text-xs text-gray-400 cursor-move bg-gray-900/30 rounded-t-2xl">
+        <div
+            onMouseDown={onDragStart}
+            className="group flex items-center justify-between p-2 text-center text-xs text-gray-400 cursor-move bg-gray-900/30 rounded-t-2xl"
+        >
             {node.isOutOfSync ? (
                 <button onClick={onSync} className="flex items-center gap-1 text-amber-400 hover:text-amber-300" title="Fonte atualizada. Clique para sincronizar.">
                     <SyncIcon className="w-4 h-4"/>
@@ -233,7 +238,16 @@ const NodeHeader: React.FC<{ onDragStart: (e: React.MouseEvent) => void; node: N
                 </button>
             ) : <div className="w-12"/>}
             <CenterContent />
-            <div className="w-12 flex justify-end">
+            <div className="flex items-center gap-2">
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onFocus?.();
+                    }}
+                    className="px-2 py-1 text-[10px] rounded bg-gray-700 text-gray-100 hover:bg-gray-600 opacity-0 group-hover:opacity-100 transition"
+                >
+                    {isFocused ? 'Fechar' : 'Foco'}
+                </button>
                  <button 
                     onClick={(e) => {
                         e.stopPropagation();
@@ -360,7 +374,7 @@ const UnexecutedNode: React.FC<{ node: Node, onRun: (parts: Part[]) => void, onU
     )
 }
 
-export const ChatNode: React.FC<ChatNodeProps> = ({ node, onSendMessage, onBranch, onRun, onDragStart, onEditMessage, onSync, onDelete, onUpdateAgentConfig, onStartEdgeCreation, onCompleteEdgeCreation, onResizeStart, onRename }) => {
+export const ChatNode: React.FC<ChatNodeProps> = ({ node, onSendMessage, onBranch, onRun, onDragStart, onEditMessage, onSync, onDelete, onUpdateAgentConfig, onStartEdgeCreation, onCompleteEdgeCreation, onResizeStart, onRename, onFocusToggle, isFocused }) => {
   const [input, setInput] = useState('');
   const [editingMessage, setEditingMessage] = useState<{index: number; parts: Part[]} | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -425,7 +439,7 @@ export const ChatNode: React.FC<ChatNodeProps> = ({ node, onSendMessage, onBranc
             <div className="w-4 h-4 bg-indigo-600 hover:bg-indigo-500 rounded-full cursor-pointer border-2 border-gray-800 transition-colors opacity-50 group-hover:opacity-100" />
         </div>
         
-        <NodeHeader onDragStart={(e) => onDragStart(e, node.id)} node={node} onSync={() => onSync(node.id)} onDelete={() => onDelete(node.id)} />
+        <NodeHeader onDragStart={(e) => onDragStart(e, node.id)} node={node} onSync={() => onSync(node.id)} onDelete={() => onDelete(node.id)} onFocus={() => onFocusToggle?.(node.id)} isFocused={isFocused} />
         <div className="px-4 pt-2">
             <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1">Nome do nó</label>
             <input
